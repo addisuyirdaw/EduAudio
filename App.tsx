@@ -1,20 +1,27 @@
-import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+/**
+ * App.tsx
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Entry point for the Accessible Educational Audio Player.
+ * Wraps the player in a SafeAreaView so content is never obscured by the
+ * device notch, home indicator, or status bar.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+
+import React from 'react';
+import { SafeAreaView, StyleSheet } from 'react-native';
+import { EducationalAudioPlayer } from './src/components/EducationalAudioPlayer';
 
 export default function App() {
   return (
-    <View style={styles.container}>
-      <Text>Open up App.tsx to start working on your app!</Text>
-      <StatusBar style="auto" />
-    </View>
+    <SafeAreaView style={styles.safeArea}>
+      <EducationalAudioPlayer />
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
     flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: '#0A0B1E',
   },
 });
