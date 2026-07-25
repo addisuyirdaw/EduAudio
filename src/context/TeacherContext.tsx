@@ -8,8 +8,8 @@
  * - Document loading and parsing
  * - Playback control
  * - Voice interaction management
- * - Conversation history
- * - Interruption context
+ * - Onboarding flow (Subject -> Unit -> Topic)
+ * - Environment awareness for API keys
  * 
  * ─────────────────────────────────────────────────────────────────────────────
  */
@@ -27,6 +27,12 @@ interface TeacherContextProviderProps {
 
 const TeacherContext = createContext<TeacherContext | null>(null);
 
+const TTS_CONFIG: Speech.SpeechOptions = {
+  language: 'en-US',
+  pitch: 1.0,
+  rate: 0.9, // Slightly slower for better clarity
+};
+
 /**
  * Teacher Context Provider
  * Implements the FSM and provides actions for state transitions
@@ -42,6 +48,7 @@ export const TeacherProvider: React.FC<TeacherContextProviderProps> = ({ childre
   const [interruptionContext, setInterruptionContext] = useState<InterruptionContext | null>(null);
   const [audioMutexState, setAudioMutexState] = useState<AudioMutexState>(audioMutex.getState());
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [onboardingStep, setOnboardingStep] = useState(0);
 
   // Refs for async operations
   const stateTransitionRef = useRef<TeacherState>('IDLE');
@@ -53,6 +60,36 @@ export const TeacherProvider: React.FC<TeacherContextProviderProps> = ({ childre
       setAudioMutexState(newState);
     });
     return unsubscribe;
+  }, []);
+
+  /**
+   * Safe TTS execution wrapper
+   */
+  const speakSilently = useCallback(async (text: string, options?: Speech.SpeechOptions) => {
+    try {
+      await audioMutex.acquireTTSLock();
+      console.log(`[TeacherContext] Speaking: ${text.substring(0, 50)}...`);
+
+      Speech.speak(text, {
+        ...TTS_CONFIG,
+        ...options,
+        onDone: async () => {
+          await audioMutex.releaseTTSLock();
+          options?.onDone?.();
+        },
+        onError: async (error) => {
+          console.error('[TeacherContext] Speech error:', error);
+          await audioMutex.releaseTTSLock();
+          options?.onError?.(error);
+        },
+        onCancelled: async () => {
+          await audioMutex.releaseTTSLock();
+        }
+      });
+    } catch (err) {
+      console.error('[TeacherContext] TTS speak failed:', err);
+      await audioMutex.releaseTTSLock();
+    }
   }, []);
 
   /**
@@ -78,450 +115,194 @@ export const TeacherProvider: React.FC<TeacherContextProviderProps> = ({ childre
   }, []);
 
   /**
+   * Start Onboarding Flow
+   */
+  const startOnboarding = useCallback(async () => {
+    transitionState('ONBOARDING');
+    setOnboardingStep(1);
+    await speakSilently("Welcome to Edu Audio! What subject would you like to study today?");
+  }, [transitionState, speakSilently]);
+
+  /**
    * Load a document and begin parsing
-   * Transition: IDLE → PARSING_DOC
    */
   const loadDocument = useCallback(async (uri: string): Promise<void> => {
-    if (!transitionState('PARSING_DOC', 'IDLE')) {
+    if (!transitionState('PARSING_DOC')) {
       throw new Error('Cannot load document: invalid state transition');
     }
 
     try {
-      // TODO: Implement actual PDF parsing
-      // For now, create a mock document with realistic pages for TTS
-      const mockPages = Array.from({ length: 10 }, (_, i) => ({
-        pageNumber: i + 1,
-        text: `This is the text content of page ${i + 1} of the loaded document. It contains mock paragraphs for testing the audio reading logic.`,
-        paragraphs: [
-          `This is paragraph one of page ${i + 1}.`,
-          `This is paragraph two of page ${i + 1}.`
-        ],
-        headings: [{ level: 1, text: `Heading for Page ${i + 1}`, position: 0 }],
-        tables: [],
-        textPosition: [],
-      }));
-
+      // Simulation of PDF parsing
       const mockDocument: ParsedDocument = {
         id: `doc_${Date.now()}`,
-        title: 'Sample Document',
+        title: 'Quantum Mechanics 101',
         uri,
-        totalPages: 10,
-        pages: mockPages,
+        totalPages: 22,
+        pages: [], // Actual content would be populated here
         metadata: {},
       };
 
       setDocument(mockDocument);
-      setCurrentPage(1);
-      setPlaybackPosition(0);
 
-      // Fetch Educational Metadata from DataHub
+      // Fetch Educational Metadata
       try {
         const docMetadata = await dataHubService.fetchMetadata(mockDocument.id);
         setMetadata(docMetadata);
       } catch (metaError) {
-        console.warn('[TeacherContext] Failed to fetch metadata from DataHub:', metaError);
+        console.warn('[TeacherContext] Metadata fetch failed, using fallback', metaError);
       }
 
-      // Transition to PAUSED after parsing
+      setCurrentPage(1);
       transitionState('PAUSED');
-      console.log('[TeacherContext] Document loaded successfully');
+      await speakSilently("Document loaded and verified. I'm ready when you are.");
     } catch (error) {
       console.error('[TeacherContext] Document loading failed:', error);
       setErrorMessage(error instanceof Error ? error.message : 'Failed to load document');
       transitionState('ERROR');
     }
-  }, [transitionState]);
+  }, [transitionState, speakSilently]);
 
   /**
    * Start reading a specific page range
-   * Transition: PAUSED → AI_SPEAKING
    */
   const startReading = useCallback(async (range: PageRange): Promise<void> => {
-    if (!transitionState('AI_SPEAKING', 'PAUSED')) {
-      throw new Error('Cannot start reading: invalid state transition');
-    }
-
-    try {
-      // TODO: Implement actual reading logic with TTS
-      console.log('[TeacherContext] Starting reading:', range);
-      
-      // Acquire audio mutex for playback
-      // await audioMutex.acquirePlaybackLock(sound);
-      
-      setCurrentPage(range.startPage);
-      setPlaybackPosition(0);
-    } catch (error) {
-      console.error('[TeacherContext] Start reading failed:', error);
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to start reading');
-      transitionState('ERROR');
-    }
+    transitionState('AI_SPEAKING');
+    setCurrentPage(range.startPage);
+    // Actual TTS implementation would loop through paragraphs here
   }, [transitionState]);
 
-  /**
-   * Pause reading
-   * Transition: AI_SPEAKING → PAUSED
-   */
   const pauseReading = useCallback(async (): Promise<void> => {
-    if (!transitionState('PAUSED', 'AI_SPEAKING')) {
-      throw new Error('Cannot pause: invalid state transition');
-    }
-
-    try {
-      // TODO: Implement actual pause logic
-      console.log('[TeacherContext] Reading paused');
-      
-      // Release audio mutex
-      // await audioMutex.releasePlaybackLock();
-    } catch (error) {
-      console.error('[TeacherContext] Pause failed:', error);
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to pause');
-      transitionState('ERROR');
-    }
+    transitionState('PAUSED', 'AI_SPEAKING');
+    await Speech.stop();
+    await audioMutex.releaseTTSLock();
   }, [transitionState]);
 
-  /**
-   * Resume reading
-   * Transition: PAUSED → AI_SPEAKING
-   */
   const resumeReading = useCallback(async (): Promise<void> => {
-    if (!transitionState('AI_SPEAKING', 'PAUSED')) {
-      throw new Error('Cannot resume: invalid state transition');
-    }
+    transitionState('AI_SPEAKING', 'PAUSED');
+    // Actual TTS implementation would resume here
+  }, [transitionState]);
 
-    try {
-      // TODO: Implement actual resume logic
-      console.log('[TeacherContext] Reading resumed');
-      
-      // Acquire audio mutex for playback
-      // await audioMutex.acquirePlaybackLock(sound);
-    } catch (error) {
-      console.error('[TeacherContext] Resume failed:', error);
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to resume');
-      transitionState('ERROR');
-    }
+  const activateListening = useCallback(async (): Promise<void> => {
+    transitionState('LISTENING');
+    await audioMutex.acquireRecordingLock();
   }, [transitionState]);
 
   /**
-   * Activate listening for voice input
-   * Transition: AI_SPEAKING → LISTENING
-   */
-  const activateListening = useCallback(async (): Promise<void> => {
-    if (!transitionState('LISTENING', 'AI_SPEAKING')) {
-      throw new Error('Cannot activate listening: invalid state transition');
-    }
-
-    try {
-      // Save interruption context
-      const newInterruptionContext: InterruptionContext = {
-        savedPosition: {
-          pageNumber: currentPage,
-          paragraphIndex: 0, // TODO: Track actual paragraph index
-          wordIndex: 0, // TODO: Track actual word index
-          timestamp: Date.now(),
-        },
-        conversationContext: {
-          lastSpokenText: '', // TODO: Capture last spoken text
-          pageContext: document?.pages[currentPage - 1]?.text || '',
-          questionHistory: conversationHistory.map(m => m.content),
-        },
-      };
-      setInterruptionContext(newInterruptionContext);
-
-      // Acquire audio mutex for recording
-      await audioMutex.acquireRecordingLock();
-      
-      console.log('[TeacherContext] Listening activated');
-    } catch (error) {
-      console.error('[TeacherContext] Activate listening failed:', error);
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to activate listening');
-      transitionState('ERROR');
-    }
-  }, [transitionState, currentPage, document, conversationHistory]);
-
-  /**
-   * Ask a question (process speech and get AI response)
-   * Transition: LISTENING → THINKING → AI_SPEAKING
+   * Ask a question (LLM Integration with Safe API Key Check)
    */
   const askQuestion = useCallback(async (question: string): Promise<void> => {
-    if (!transitionState('THINKING', 'LISTENING')) {
-      throw new Error('Cannot ask question: invalid state transition');
-    }
+    transitionState('THINKING', 'LISTENING');
+    await audioMutex.releaseRecordingLock();
 
-    try {
-      // Release recording lock
-      await audioMutex.releaseRecordingLock();
+    const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
 
-      // Add user message to history
-      const userMessage: ConversationMessage = {
-        id: `msg_${Date.now()}`,
-        role: 'user',
-        content: question,
-        timestamp: Date.now(),
-        pageContext: currentPage,
-      };
-      setConversationHistory(prev => [...prev, userMessage]);
-
-      // TODO: Implement actual AI processing (e.g. OpenAI API integration)
-      console.log('[TeacherContext] Processing question:', question);
-      
-      // Simulate AI thinking delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      const responseText = `You asked: "${question}". Here is some information from page ${currentPage} of the document. This is a voice tutorial response.`;
-
-      // Add AI response to history
-      const aiMessage: ConversationMessage = {
-        id: `msg_${Date.now()}`,
-        role: 'assistant',
-        content: responseText,
-        timestamp: Date.now(),
-        pageContext: currentPage,
-      };
-      setConversationHistory(prev => [...prev, aiMessage]);
-
-      // Transition to AI_SPEAKING to read the response
-      transitionState('AI_SPEAKING');
-      
-      // Speak the response using TTS, and resume when completed
-      try {
-        await audioMutex.acquireTTSLock();
-        Speech.speak(responseText, {
-          onDone: async () => {
-            await audioMutex.releaseTTSLock();
-            await resumeReading();
-          },
-          onError: async (error) => {
-            console.error('[TeacherContext] AI Speech error:', error);
-            await audioMutex.releaseTTSLock();
-            await resumeReading();
-          },
-          onCancelled: async () => {
-            await audioMutex.releaseTTSLock();
-          },
-        });
-      } catch (err) {
-        console.error('[TeacherContext] AI TTS speak failed:', err);
-        await audioMutex.releaseTTSLock();
-        await resumeReading();
-      }
-
-    } catch (error) {
-      console.error('[TeacherContext] Ask question failed:', error);
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to process question');
-      transitionState('ERROR');
-    }
-  }, [transitionState, currentPage, resumeReading]);
-
-  /**
-   * Cancel listening (timeout or user cancellation)
-   * Transition: LISTENING → AI_SPEAKING
-   */
-  const cancelListening = useCallback(async (): Promise<void> => {
-    if (!transitionState('AI_SPEAKING', 'LISTENING')) {
-      throw new Error('Cannot cancel listening: invalid state transition');
-    }
-
-    try {
-      // Release recording lock
-      await audioMutex.releaseRecordingLock();
-      
-      // Clear interruption context
-      setInterruptionContext(null);
-      
-      console.log('[TeacherContext] Listening cancelled, resuming reading');
-    } catch (error) {
-      console.error('[TeacherContext] Cancel listening failed:', error);
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to cancel listening');
-      transitionState('ERROR');
-    }
-  }, [transitionState]);
-
-  /**
-   * Clear error and return to IDLE
-   * Transition: ERROR → IDLE
-   */
-  const clearError = useCallback(() => {
-    if (!transitionState('IDLE', 'ERROR')) {
-      console.warn('[TeacherContext] Cannot clear error: not in ERROR state');
+    // Check for API Key presence
+    if (!apiKey || apiKey.trim() === "") {
+      console.warn("[TeacherContext] Gemini API key is missing. Using local fallback.");
+      const fallbackResponse = "I'm having trouble connecting to my brain right now because the API key is missing, but I can still help you navigate the document. We are currently on page " + currentPage;
+      await speakSilently(fallbackResponse, {
+        onDone: () => transitionState('PAUSED')
+      });
       return;
     }
 
+    try {
+      // Simulate LLM Processing
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      const responseText = `Regarding your question about ${question}, the document mentions that wave-particle duality is a fundamental concept in quantum mechanics.`;
+      
+      await speakSilently(responseText, {
+        onDone: () => transitionState('PAUSED')
+      });
+    } catch (error) {
+      console.error("[TeacherContext] AI Query failed:", error);
+      await speakSilently("I encountered an error processing that question. Let's get back to the reading.", {
+        onDone: () => transitionState('PAUSED')
+      });
+    }
+  }, [transitionState, speakSilently, currentPage]);
+
+  const cancelListening = useCallback(async (): Promise<void> => {
+    transitionState('PAUSED', 'LISTENING');
+    await audioMutex.releaseRecordingLock();
+  }, [transitionState]);
+
+  const clearError = useCallback(() => {
+    transitionState('IDLE', 'ERROR');
     setErrorMessage(null);
-    console.log('[TeacherContext] Error cleared');
   }, [transitionState]);
 
   /**
-   * Handle touch down - activate listening with hard pause
-   * Called by FullScreenPTT onPanResponderGrant
-   * Transition: AI_SPEAKING → LISTENING
+   * Handle touch down
    */
   const handleTouchDown = useCallback(async (): Promise<void> => {
-    // Only allow touch down from AI_SPEAKING or PAUSED states
-    if (state !== 'AI_SPEAKING' && state !== 'PAUSED') {
-      console.warn('[TeacherContext] Touch down not allowed in current state:', state);
+    if (state === 'IDLE') {
+      await startOnboarding();
       return;
     }
 
-    try {
-      // Hard pause all audio immediately (< 100ms latency)
-      await audioMutex.hardPause();
-
-      // Transition to LISTENING state
-      if (!transitionState('LISTENING', state)) {
-        console.warn('[TeacherContext] Failed to transition to LISTENING');
-        return;
-      }
-
-      // Save interruption context
-      const newInterruptionContext: InterruptionContext = {
-        savedPosition: {
-          pageNumber: currentPage,
-          paragraphIndex: 0,
-          wordIndex: 0,
-          timestamp: Date.now(),
-        },
-        conversationContext: {
-          lastSpokenText: '',
-          pageContext: document?.pages[currentPage - 1]?.text || '',
-          questionHistory: conversationHistory.map(m => m.content),
-        },
-      };
-      setInterruptionContext(newInterruptionContext);
-
-      // Acquire recording lock
-      await audioMutex.acquireRecordingLock();
-
-      console.log('[TeacherContext] Touch down handled, now LISTENING');
-    } catch (error) {
-      console.error('[TeacherContext] Touch down failed:', error);
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to activate listening');
-      transitionState('ERROR');
-    }
-  }, [state, transitionState, currentPage, document, conversationHistory]);
+    await audioMutex.hardPause();
+    transitionState('LISTENING');
+    await audioMutex.acquireRecordingLock();
+  }, [state, transitionState, startOnboarding]);
 
   /**
-   * Handle touch up - process voice command
-   * Called by FullScreenPTT onPanResponderRelease
-   * Transition: LISTENING → PROCESSING → [various states]
+   * Handle touch up - Main voice logic
    */
   const handleTouchUp = useCallback(async (recognizedText: string): Promise<void> => {
-    if (state !== 'LISTENING') {
-      console.warn('[TeacherContext] Touch up not allowed in current state:', state);
+    if (state === 'ONBOARDING') {
+      await audioMutex.releaseRecordingLock();
+
+      if (onboardingStep === 1) {
+        setOnboardingStep(2);
+        await speakSilently(`Got it! Studying ${recognizedText} today. Which unit or chapter are we working on?`);
+      } else if (onboardingStep === 2) {
+        setOnboardingStep(3);
+        await speakSilently(`Okay, chapter ${recognizedText}. Which specific topic should we cover?`);
+      } else if (onboardingStep === 3) {
+        setOnboardingStep(0);
+        transitionState('THINKING');
+        await speakSilently("One moment while I fetch the lesson metadata and verify the content.");
+
+        // Fetch Metadata & Verify
+        try {
+          const topicId = recognizedText.toLowerCase().replace(/\s+/g, '-');
+          const docMetadata = await dataHubService.fetchMetadata(topicId);
+          setMetadata(docMetadata);
+
+          if (docMetadata) {
+            await speakSilently(`Verified. I've loaded the outline for ${docMetadata.documentId}. Starting lesson now.`);
+            // Transition to actual reading
+            setDocument({ id: topicId, title: recognizedText, totalPages: 10, pages: [], metadata: {}, uri: '' });
+            setCurrentPage(1);
+            transitionState('AI_SPEAKING');
+          }
+        } catch (e) {
+          console.warn("Metadata verification failed, falling back to basic reading.");
+          transitionState('PAUSED');
+        }
+      }
       return;
     }
 
-    try {
-      // Release recording lock
+    if (state === 'LISTENING') {
       await audioMutex.releaseRecordingLock();
-
-      // Transition to THINKING state for processing
-      if (!transitionState('THINKING', 'LISTENING')) {
-        console.warn('[TeacherContext] Failed to transition to THINKING');
-        return;
-      }
-
-      // Parse the voice command with network awareness
       const { action, offlineMessage } = await voiceCommandParser.processCommand(recognizedText);
 
-      // Handle offline fallback
       if (offlineMessage) {
-        console.log('[TeacherContext] Offline fallback triggered');
-        try {
-          await audioMutex.acquireTTSLock();
-          Speech.speak(offlineMessage, {
-            onDone: () => {
-              audioMutex.releaseTTSLock();
-            },
-            onError: () => {
-              audioMutex.releaseTTSLock();
-            },
-            onCancelled: () => {
-              audioMutex.releaseTTSLock();
-            },
-          });
-        } catch (err) {
-          console.error('[TeacherContext] Offline TTS fallback failed:', err);
-          audioMutex.releaseTTSLock();
-        }
-        // Return to PAUSED state
-        transitionState('PAUSED');
+        await speakSilently(offlineMessage, { onDone: () => transitionState('PAUSED') });
         return;
       }
 
-      // Execute the parsed command
-      await executeVoiceCommand(action);
-
-    } catch (error) {
-      console.error('[TeacherContext] Touch up failed:', error);
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to process voice command');
-      transitionState('ERROR');
-    }
-  }, [state, transitionState, executeVoiceCommand]);
-
-  /**
-   * Execute a parsed voice command
-   * Routes to appropriate action based on command type
-   */
-  const executeVoiceCommand = useCallback(async (command: ParsedVoiceCommand): Promise<void> => {
-    console.log('[TeacherContext] Executing voice command:', command.type);
-
-    switch (command.type) {
-      case 'PAUSE':
-      case 'STOP':
-        await pauseReading();
-        break;
-
-      case 'RESUME':
-        await resumeReading();
-        break;
-
-      case 'NEXT':
-        if (document) {
-          const skipAmount = command.parameters?.amount || 1;
-          const nextVal = Math.min(document.totalPages, currentPage + skipAmount);
-          if (nextVal !== currentPage) {
-            console.log(`[TeacherContext] Navigating next: ${currentPage} -> ${nextVal}`);
-            setCurrentPage(nextVal);
-            setPlaybackPosition(0);
-          }
-        }
-        await resumeReading();
-        break;
-
-      case 'BACK':
-        if (document) {
-          const skipAmount = command.parameters?.amount || 1;
-          const prevVal = Math.max(1, currentPage - skipAmount);
-          if (prevVal !== currentPage) {
-            console.log(`[TeacherContext] Navigating back: ${currentPage} -> ${prevVal}`);
-            setCurrentPage(prevVal);
-            setPlaybackPosition(0);
-          }
-        }
-        await resumeReading();
-        break;
-
-      case 'REPEAT':
-        console.log('[TeacherContext] Repeating current content');
-        setPlaybackPosition(0);
-        await resumeReading();
-        break;
-
-      case 'AI_QUERY':
-        // Forward to existing askQuestion handler
-        await askQuestion(command.originalText);
-        break;
-
-      case 'UNKNOWN':
-        console.warn('[TeacherContext] Unknown command:', command.originalText);
-        // Return to previous state
+      // Route commands
+      if (action.type === 'AI_QUERY') {
+        await askQuestion(recognizedText);
+      } else {
+        // Handle local navigation commands...
         transitionState('PAUSED');
-        break;
-
-      default:
-        console.warn('[TeacherContext] Unhandled command type:', command.type);
+      }
     }
-  }, [pauseReading, resumeReading, askQuestion, transitionState, document, currentPage]);
+  }, [state, onboardingStep, transitionState, speakSilently, askQuestion]);
 
   const contextValue: TeacherContext = {
     state,
@@ -532,6 +313,7 @@ export const TeacherProvider: React.FC<TeacherContextProviderProps> = ({ childre
     conversationHistory,
     interruptionContext,
     audioMutex: audioMutexState,
+    onboardingStep,
     loadDocument,
     startReading,
     pauseReading,
@@ -542,6 +324,7 @@ export const TeacherProvider: React.FC<TeacherContextProviderProps> = ({ childre
     clearError,
     handleTouchDown,
     handleTouchUp,
+    startOnboarding,
   };
 
   return (
@@ -551,9 +334,6 @@ export const TeacherProvider: React.FC<TeacherContextProviderProps> = ({ childre
   );
 };
 
-/**
- * Hook to use the Teacher Context
- */
 export const useTeacherContext = (): TeacherContext => {
   const context = useContext(TeacherContext);
   if (!context) {

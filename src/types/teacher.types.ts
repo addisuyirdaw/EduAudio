@@ -17,6 +17,7 @@ export type TeacherState =
   | 'AI_SPEAKING'       // TTS reading document content
   | 'LISTENING'         // Microphone active, awaiting user input
   | 'THINKING'          // Processing user question with LLM
+  | 'ONBOARDING'        // Conversational setup flow
   | 'PAUSED'            // Playback paused, awaiting resume or question
   | 'ERROR';            // Error state with recovery path
 
@@ -157,7 +158,8 @@ export interface TeacherContext {
   conversationHistory: ConversationMessage[];
   interruptionContext: InterruptionContext | null;
   audioMutex: AudioMutexState;
-  
+  onboardingStep: number;
+
   // Actions
   loadDocument: (uri: string) => Promise<void>;
   startReading: (range: PageRange) => Promise<void>;
@@ -169,6 +171,7 @@ export interface TeacherContext {
   clearError: () => void;
   handleTouchDown: () => Promise<void>;
   handleTouchUp: (recognizedText: string) => Promise<void>;
+  startOnboarding: () => Promise<void>;
 }
 
 /**
