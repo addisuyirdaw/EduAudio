@@ -3,32 +3,50 @@
   "version": "1.0.0",
   "main": "index.ts",
   "dependencies": {
-    "expo": "~56.0.8",
-    "expo-av": "~15.1.4",
-    "expo-splash-screen": "~56.0.10",
-    "expo-status-bar": "~56.0.4",
+    "@config-plugins/react-native-blob-util": "^14.0.1",
+    "@config-plugins/react-native-pdf": "^14.0.1",
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "@react-native-voice/voice": "^3.2.4",
+    "expo": "^57.0.1",
+    "expo-av": "~16.0.8",
+    "expo-dev-client": "~57.0.5",
+    "expo-document-picker": "~57.0.0",
+    "expo-file-system": "~57.0.0",
+    "expo-haptics": "~57.0.0",
+    "expo-network": "~57.0.0",
+    "expo-speech": "~57.0.0",
+    "expo-splash-screen": "~57.0.2",
+    "expo-status-bar": "~57.0.0",
     "lucide-react-native": "^1.17.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "react-native": "0.85.3",
+    "react-native": "0.86.0",
+    "react-native-blob-util": "^0.24.10",
+    "react-native-pdf": "^7.0.4",
     "react-native-svg": "15.15.4",
-    "react-native-web": "^0.21.2"
+    "react-native-web": "^0.21.2",
+    "uuid": "^9.0.1",
+    "zustand": "^4.5.0"
   },
   "devDependencies": {
+    "@expo/ngrok": "^4.1.3",
     "@types/react": "~19.2.2",
     "typescript": "~6.0.3"
   },
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "web": "expo start --web"
   },
   "private": true,
   "expo": {
     "doctor": {
       "reactNativeDirectoryCheck": {
-        "exclude": ["expo-av", "expo-modules-jsi"]
+        "exclude": [
+          "expo-av",
+          "expo-modules-jsi"
+        ]
       }
     }
   }

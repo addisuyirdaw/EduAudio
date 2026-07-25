@@ -20,14 +20,19 @@ import {
   Dimensions,
   Platform,
   StatusBar,
+  PixelRatio,
 } from 'react-native';
 import { RotateCcw, RotateCw, Play, Pause, Mic } from 'lucide-react-native';
 import { useEducationalAudio } from '../hooks/useEducationalAudio';
+import { useAdaptiveLayout } from '../hooks/useAdaptiveLayout';
+import { AdaptiveHeaderZone } from './AdaptiveHeaderZone';
+import { AdaptiveHUDZone } from './AdaptiveHUDZone';
 import { Colors, Typography, Spacing, Radius, MIN_TOUCH_TARGET } from '../styles/theme';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const FONT_SCALE = PixelRatio.getFontScale(); // Detect system font scaling
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -114,6 +119,7 @@ export const EducationalAudioPlayer: React.FC = () => {
     seekTo,
   } = useEducationalAudio();
 
+  const adaptiveConfig = useAdaptiveLayout();
   const progress = safeProgress(positionMs, durationMs);
 
   // Formatted position and duration labels
@@ -146,107 +152,44 @@ export const EducationalAudioPlayer: React.FC = () => {
         <Text style={styles.liveRegionText}>{statusAnnouncement}</Text>
       </View>
 
-      {/* ── UPPER SECTION (65% of screen height) ────────────────────────── */}
-      <View style={styles.upperContent}>
+      {/* ── PORTRAIT VERTICAL STACK ──────────────────────────────────────── */}
+      
+      {/* HEADER ZONE (Top 15%) - Adaptive with scrollable fallback */}
+      <AdaptiveHeaderZone
+        config={adaptiveConfig}
+        courseTitle="Introduction to Cognitive Psychology"
+        chapterTitle="Chapter 3: Memory & Learning"
+        instructorName="Dr. Sarah Chen"
+      />
+
+      {/* READING VIEWPORT ZONE (Middle 45%) - Dynamic typography */}
+      <View style={[styles.readingViewport, { flex: adaptiveConfig.readingViewport.flex }]}>
+        <View style={styles.paragraphScrollContainer}>
+          <Text 
+            style={[
+              styles.readingText,
+              { fontSize: 20 * adaptiveConfig.textMultiplier } // Use adaptive text multiplier
+            ]}
+            numberOfLines={8}
+            ellipsizeMode="tail"
+          >
+            {currentChunkText}
+          </Text>
+        </View>
         
-        {/* ── HEADER SECTION ──────────────────────────────────────────────
-            Grouped into a single accessibility node with the specific label.
-        ────────────────────────────────────────────────────────────────── */}
-        <View
-          accessible={true}
-          accessibilityRole="header"
-          accessibilityLabel="Course: Introduction to Cognitive Psychology. Chapter 3: Memory and Learning by Doctor Sarah Chen"
-          style={styles.headerContainer}
-        >
-          <Text style={styles.courseSubtitle}>
-            Introduction to Cognitive Psychology
+        {/* Minimal progress indicator */}
+        <View style={styles.minimalProgress}>
+          <Text style={[styles.progressText, { fontSize: 12 * adaptiveConfig.textMultiplier }]}>
+            {positionLabel} / {durationLabel}
           </Text>
-          <Text style={styles.chapterTitle}>
-            Chapter 3: Memory & Learning
-          </Text>
-          <Text style={styles.instructorName}>
-            Dr. Sarah Chen
-          </Text>
-        </View>
-
-        {/* ── CENTRAL HUB (Audio visualization & timeline) ─────────────── */}
-        <View style={styles.playerHub}>
-          {/* Centered audio visualization placeholder graphic */}
-          <VisualizerBars isPlaying={isPlaying} progress={progress} />
-
-          {/* Active paragraph text chunk */}
-          <View style={styles.paragraphContainer}>
-            <Text style={styles.paragraphText} numberOfLines={3}>
-              {currentChunkText}
-            </Text>
+          <View style={styles.progressBar}>
+            <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
           </View>
-
-          {/* Scrubber / Progress Line */}
-          <Pressable 
-            onPress={handleProgressBarPress}
-            accessible={true}
-            accessibilityRole="progressbar"
-            accessibilityLabel={`Lecture progress, ${positionLabel} of ${durationLabel}`}
-            accessibilityValue={{
-              min: 0,
-              max: 100,
-              now: Math.round(progress * 100),
-              text: `${positionLabel} of ${durationLabel}`,
-            }}
-            accessibilityActions={[
-              { name: 'increment', label: 'Seek forward 15 seconds' },
-              { name: 'decrement', label: 'Seek backward 15 seconds' },
-            ]}
-            onAccessibilityAction={(event) => {
-              if (event.nativeEvent.actionName === 'increment') {
-                skipForward15();
-              } else if (event.nativeEvent.actionName === 'decrement') {
-                skipBackward15();
-              }
-            }}
-            style={styles.progressContainer}
-          >
-            {/* Sleek progress line track */}
-            <View style={styles.progressTrack}>
-              {/* Fill */}
-              <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
-              {/* Thumb */}
-              <View style={[styles.progressThumb, { left: `${progress * 100}%` as any }]} />
-            </View>
-
-            {/* Timestamps on opposite sides of the line */}
-            <View 
-              style={styles.progressLabels}
-              importantForAccessibility="no-hide-descendants"
-              accessibilityElementsHidden={true}
-            >
-              <Text style={styles.timestampText}>{positionLabel}</Text>
-              <Text style={styles.timestampText}>{durationLabel}</Text>
-            </View>
-          </Pressable>
         </View>
+      </View>
 
-        {/* ── SPEED ROW ─────────────────────────────────────────────────── */}
-        <View style={styles.speedRow}>
-          <Pressable
-            onPress={cyclePlaybackSpeed}
-            accessible={true}
-            accessibilityRole="button"
-            accessibilityLabel={`Playback speed, currently ${playbackSpeed}x`}
-            accessibilityHint="Cycles the playback speed between 1x, 1.5x, 2x, 2.5x, 3x, and 3.5x"
-            style={({ pressed }) => [
-              styles.speedButton,
-              pressed && styles.controlButtonPressed,
-            ]}
-          >
-            <Text style={styles.speedButtonText}>{playbackSpeed}x Speed</Text>
-          </Pressable>
-        </View>
-
-        {/* ── CONTROLS ROW ────────────────────────────────────────────────
-            Symmetrical media control row. All touch targets are at least 
-            55 x 55 dp to exceed standard guidelines.
-        ────────────────────────────────────────────────────────────────── */}
+      {/* TACTILE MEDIA CONTROL ROW (Lower 20%) - Thumb-friendly with adaptive touch targets */}
+      <View style={[styles.mediaControlZone, { flex: adaptiveConfig.mediaControlZone.flex, minHeight: adaptiveConfig.mediaControlZone.minHeight }]}>
         <View style={styles.controlsRow}>
           {/* Skip Backward 15s */}
           <Pressable
@@ -257,33 +200,35 @@ export const EducationalAudioPlayer: React.FC = () => {
             accessibilityLabel="Skip backward 15 seconds"
             accessibilityState={{ disabled: isLoading }}
             style={({ pressed }) => [
-              styles.controlButton,
+              styles.skipButton,
+              { minWidth: adaptiveConfig.skipButtonSize, minHeight: adaptiveConfig.skipButtonSize },
               pressed && styles.controlButtonPressed,
               isLoading && styles.controlButtonDisabled,
             ]}
           >
-            <RotateCcw size={22} color={Colors.primary} />
-            <Text style={styles.controlSubscript}>15s</Text>
+            <RotateCcw size={24} color={Colors.primary} />
+            <Text style={[styles.skipLabel, { fontSize: 10 * adaptiveConfig.textMultiplier }]}>15s</Text>
           </Pressable>
 
-          {/* Play / Pause Toggle (Larger, central action) */}
+          {/* Play / Pause Toggle (Oversized central button) */}
           <Pressable
             onPress={togglePlayPause}
             disabled={isLoading}
             accessible={true}
             accessibilityRole="button"
-            accessibilityLabel={isLoading ? 'Loading audio' : isPlaying ? 'Pause lecture' : 'Play lecture'}
+            accessibilityLabel={isLoading ? 'Loading audio' : isPlaying ? 'Pause lecture playback, holding down anywhere else will activate the voice teacher' : 'Play lecture playback, holding down anywhere else will activate the voice teacher'}
             accessibilityState={{ busy: isLoading }}
             style={({ pressed }) => [
               styles.playButton,
+              { minWidth: adaptiveConfig.playButtonSize, minHeight: adaptiveConfig.playButtonSize },
               pressed && styles.controlButtonPressed,
               isLoading && styles.controlButtonDisabled,
             ]}
           >
             {isPlaying ? (
-              <Pause size={28} color={Colors.onPrimary} strokeWidth={2.5} />
+              <Pause size={32} color={Colors.onPrimary} strokeWidth={2.5} />
             ) : (
-              <Play size={28} color={Colors.onPrimary} strokeWidth={2.5} style={{ marginLeft: 3 }} />
+              <Play size={32} color={Colors.onPrimary} strokeWidth={2.5} style={{ marginLeft: 4 }} />
             )}
           </Pressable>
 
@@ -296,68 +241,44 @@ export const EducationalAudioPlayer: React.FC = () => {
             accessibilityLabel="Skip forward 15 seconds"
             accessibilityState={{ disabled: isLoading }}
             style={({ pressed }) => [
-              styles.controlButton,
+              styles.skipButton,
+              { minWidth: adaptiveConfig.skipButtonSize, minHeight: adaptiveConfig.skipButtonSize },
               pressed && styles.controlButtonPressed,
               isLoading && styles.controlButtonDisabled,
             ]}
           >
-            <RotateCw size={22} color={Colors.primary} />
-            <Text style={styles.controlSubscript}>15s</Text>
+            <RotateCw size={24} color={Colors.primary} />
+            <Text style={[styles.skipLabel, { fontSize: 10 * adaptiveConfig.textMultiplier }]}>15s</Text>
           </Pressable>
         </View>
-
       </View>
 
-      {/* ── BOTTOM AI PANEL (Occupies exactly 35% of overall screen height) ── */}
+      {/* CONTEXTUAL HUD ZONE (Bottom 20%) - Adaptive with scrollable fallback */}
+      <AdaptiveHUDZone
+        config={adaptiveConfig}
+        playbackSpeed={playbackSpeed}
+        isAIListening={isAIListening}
+        onSpeedPress={cyclePlaybackSpeed}
+        onAIPress={toggleAI}
+      />
+
+      {/* ── FULL-SCREEN PTT OVERLAY ────────────────────────────────────────
+          Routes gestures to FullScreenPTT while allowing controls to intercept
+      ──────────────────────────────────────────────────────────────────── */}
       <Pressable
         onPress={toggleAI}
         accessible={true}
         accessibilityRole="button"
-        accessibilityLabel={isAIListening ? 'Ask AI, currently listening' : 'Ask AI'}
-        accessibilityHint={
-          isAIListening
-            ? 'Double-tap to cancel listening'
-            : 'Double-tap to activate voice command and ask a question about this lecture'
-        }
-        accessibilityState={{ selected: isAIListening }}
-        style={({ pressed }) => [
-          styles.aiPanel,
-          isAIListening && styles.aiPanelActive,
-          pressed && styles.aiPanelPressed,
-        ]}
+        accessibilityLabel="Hold to talk to AI Teacher"
+        accessibilityHint="Touch and hold anywhere on the screen to activate voice command"
+        style={styles.fullScreenOverlay}
       >
-        {/* Animated wave/pulse rings behind the microphone when active */}
         {isAIListening && (
           <View style={styles.aiOverlay} pointerEvents="none">
             <View style={styles.aiPulseRing} />
             <View style={styles.aiPulseRingOuter} />
           </View>
         )}
-
-        <View style={styles.aiContentContainer}>
-          <View style={[styles.micCircle, isAIListening && styles.micCircleActive]}>
-            <Mic size={28} color={isAIListening ? Colors.aiActive : Colors.primary} strokeWidth={2} />
-          </View>
-          <Text style={styles.aiTitle}>
-            {isAIListening ? 'Listening…' : 'Ask AI'}
-          </Text>
-          <Text style={styles.aiSubtitle}>
-            {isAIListening 
-              ? 'Speak your question about this lecture now' 
-              : 'Tap to ask anything about this lecture content'}
-          </Text>
-
-          {/* Audio Visualizer Wave Dots when listening */}
-          {isAIListening && (
-            <View style={styles.listeningWave}>
-              <View style={[styles.waveDot, { height: 16 }]} />
-              <View style={[styles.waveDot, { height: 24 }]} />
-              <View style={[styles.waveDot, { height: 12 }]} />
-              <View style={[styles.waveDot, { height: 32 }]} />
-              <View style={[styles.waveDot, { height: 18 }]} />
-            </View>
-          )}
-        </View>
       </Pressable>
     </View>
   );
@@ -385,164 +306,86 @@ const styles = StyleSheet.create({
     fontSize: 1,
   },
 
-  // Upper section takes up remaining 65% height
-  upperContent: {
-    flex: 0.65,
-    paddingHorizontal: 24,
+  // ── HEADER ZONE (Top 15%) ───────────────────────────────────────────
+  headerZone: {
+    flex: 0.15,
+    paddingHorizontal: Spacing.lg,
     paddingTop: Platform.OS === 'android' ? 40 : 20,
-    justifyContent: 'space-between',
-    paddingBottom: 12,
+    justifyContent: 'center',
   },
-
-  // Header styles (grouped top headers)
-  headerContainer: {
-    marginTop: 12,
+  headerContent: {
+    flexDirection: 'column',
     alignItems: 'flex-start',
   },
-  courseSubtitle: {
-    color: Colors.primary, // Theme Primary
-    fontSize: 13,
+  courseTitle: {
+    color: Colors.primary,
+    fontSize: 14 / FONT_SCALE,
     fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: 1.5,
-    marginBottom: 6,
+    marginBottom: 4,
   },
   chapterTitle: {
     color: Colors.onSurface,
-    fontSize: 22,
+    fontSize: 24 / FONT_SCALE,
     fontWeight: '700',
-    lineHeight: 28,
+    lineHeight: 32 / FONT_SCALE,
     marginBottom: 4,
   },
   instructorName: {
     color: Colors.muted,
-    fontSize: 14,
+    fontSize: 16 / FONT_SCALE,
     fontWeight: '500',
   },
 
-  // Central Hub
-  playerHub: {
-    backgroundColor: Colors.surface, // Theme Surface
-    borderRadius: 24,
-    paddingVertical: 20,
-    paddingHorizontal: 16,
-    alignItems: 'center',
+  // ── READING VIEWPORT ZONE (Middle 45%) ────────────────────────────────
+  readingViewport: {
+    flex: 0.45,
+    paddingHorizontal: Spacing.lg,
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: Colors.surfaceElevated,
-    marginVertical: 8,
-    shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 16,
-    elevation: 4,
   },
-  visualizerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  paragraphScrollContainer: {
+    flex: 1,
     justifyContent: 'center',
-    height: 60,
-    gap: 4,
-    marginBottom: 16,
+    paddingVertical: Spacing.md,
   },
-  visualizerBar: {
-    width: 4,
-    borderRadius: 2,
-  },
-  paragraphContainer: {
-    width: '100%',
-    paddingHorizontal: 8,
-    marginBottom: 16,
-    minHeight: 60,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  paragraphText: {
+  readingText: {
     color: Colors.onSurface,
-    fontSize: 13,
-    lineHeight: 18,
-    textAlign: 'center',
+    fontSize: 20, // Base size, adjusted by FONT_SCALE dynamically
+    lineHeight: 28,
+    textAlign: 'left',
     fontWeight: '500',
   },
-
-  // Progress Bar / Scrubber
-  progressContainer: {
-    width: '100%',
-    paddingHorizontal: 8,
+  minimalProgress: {
+    marginTop: Spacing.sm,
   },
-  progressTrack: {
-    height: 4,
+  progressText: {
+    color: Colors.muted,
+    fontSize: 12 / FONT_SCALE,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  progressBar: {
+    height: 3,
     backgroundColor: Colors.surfaceElevated,
     borderRadius: 2,
-    position: 'relative',
-    marginBottom: 8,
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: Colors.primary,
-    borderRadius: 2,
-  },
-  progressThumb: {
-    position: 'absolute',
-    top: -6,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: Colors.primary,
-    marginLeft: -8,
-    shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  progressLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '100%',
-  },
-  timestampText: {
-    color: Colors.muted,
-    fontSize: 11,
-    fontWeight: '600',
   },
 
-  // Speed Cycle Control
-  speedRow: {
-    flexDirection: 'row',
+  // ── TACTILE MEDIA CONTROL ROW (Lower 20%) ────────────────────────────
+  mediaControlZone: {
+    flex: 0.20,
+    paddingHorizontal: Spacing.lg,
     justifyContent: 'center',
-    alignItems: 'center',
-    marginVertical: 4,
   },
-  speedButton: {
-    minWidth: 120,
-    minHeight: MIN_TOUCH_TARGET, // Enforce min touch target 55x55 dp
-    borderRadius: 28,
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.surfaceElevated,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-  },
-  speedButtonText: {
-    color: Colors.primary,
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-  },
-
-  // Controls Row
   controlsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 32,
-    marginBottom: 4,
+    gap: 24,
   },
-  controlButton: {
-    minWidth: MIN_TOUCH_TARGET, // Enforce min touch target 55x55 dp
-    minHeight: MIN_TOUCH_TARGET,
+  skipButton: {
+    minWidth: 56, // WCAG AAA minimum
+    minHeight: 56,
     borderRadius: 28,
     backgroundColor: Colors.surface,
     borderWidth: 1,
@@ -550,18 +393,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  controlSubscript: {
-    fontSize: 8,
+  skipLabel: {
+    fontSize: 10 / FONT_SCALE,
     color: Colors.primary,
     fontWeight: '700',
     marginTop: 2,
     textTransform: 'uppercase',
   },
   playButton: {
-    minWidth: 72, // Highlighted central Play button
+    minWidth: 72, // Oversized central button (72x72dp)
     minHeight: 72,
     borderRadius: 36,
-    backgroundColor: Colors.primary, // Theme primary color
+    backgroundColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: Colors.primary,
@@ -578,68 +421,62 @@ const styles = StyleSheet.create({
     opacity: 0.4,
   },
 
-  // Bottom AI Panel (Occupies exactly 35% of overall screen height)
-  aiPanel: {
-    flex: 0.35,
-    width: '100%',
-    backgroundColor: Colors.aiBackground, // Theme AI default background
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
-    borderTopWidth: 1,
-    borderTopColor: Colors.surfaceElevated,
+  // ── CONTEXTUAL HUD ZONE (Bottom 20%) ───────────────────────────────────
+  hudZone: {
+    flex: 0.20,
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.lg,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  speedButton: {
+    minWidth: 100,
+    minHeight: MIN_TOUCH_TARGET,
+    borderRadius: 20,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.surfaceElevated,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 24,
-    position: 'relative',
-    overflow: 'hidden',
+    paddingHorizontal: 12,
   },
-  aiPanelActive: {
-    backgroundColor: Colors.aiActiveBackground,
-    borderTopColor: Colors.aiActive,
-  },
-  aiPanelPressed: {
-    opacity: 0.95,
-  },
-  aiContentContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 10,
-  },
-  micCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: Colors.background,
-    borderWidth: 2,
-    borderColor: Colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-    shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  micCircleActive: {
-    borderColor: Colors.aiActive,
-    shadowColor: Colors.aiActive,
-    backgroundColor: Colors.aiActiveBackground,
-  },
-  aiTitle: {
-    color: Colors.onSurface,
-    fontSize: 20,
+  speedButtonText: {
+    color: Colors.primary,
+    fontSize: 12 / FONT_SCALE,
     fontWeight: '700',
-    marginBottom: 4,
+    textTransform: 'uppercase',
   },
-  aiSubtitle: {
+  aiHintText: {
     color: Colors.muted,
-    fontSize: 13,
+    fontSize: 13 / FONT_SCALE,
     textAlign: 'center',
-    paddingHorizontal: 16,
+    flex: 1,
+    marginHorizontal: Spacing.md,
+  },
+  aiMiniButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.surfaceElevated,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  aiMiniButtonActive: {
+    backgroundColor: Colors.aiActiveBackground,
+    borderColor: Colors.aiActive,
   },
 
-  // Active AI overlay pulse rings
+  // ── FULL-SCREEN PTT OVERLAY ───────────────────────────────────────────
+  fullScreenOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'transparent',
+  },
   aiOverlay: {
     position: 'absolute',
     left: 0,
@@ -667,20 +504,6 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: Colors.aiActive,
     opacity: 0.25,
-  },
-
-  // Listening wave animation indicators
-  listeningWave: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    height: 40,
-    marginTop: 16,
-  },
-  waveDot: {
-    width: 4,
-    backgroundColor: Colors.aiActive,
-    borderRadius: 2,
   },
 });
 
