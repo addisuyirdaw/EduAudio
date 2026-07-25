@@ -199,7 +199,8 @@ export const TeacherProvider: React.FC<TeacherContextProviderProps> = ({ childre
     // Check for API Key presence
     if (!apiKey || apiKey.trim() === "") {
       console.warn("[TeacherContext] Gemini API key is missing. Using local fallback.");
-      const fallbackResponse = "I'm having trouble connecting to my brain right now because the API key is missing, but I can still help you navigate the document. We are currently on page " + currentPage;
+      // Updated fallback response to be more user-friendly for students
+      const fallbackResponse = "I am currently running in offline mode. I can still help you read your document, but my advanced questioning features are limited. We are on page " + currentPage;
       await speakSilently(fallbackResponse, {
         onDone: () => transitionState('PAUSED')
       });
